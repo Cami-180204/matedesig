@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<title>Graficador Profesional de Desigualdades</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.1/math.min.js"></script>
+<style>
+  canvas{background:#ffffff;border:1px solid #222;border-radius:0.75rem;touch-action:none;cursor:grab}
+  canvas:active{cursor:grabbing}
+  .moveBtn{background:#444;color:#fff;font-weight:bold;border-radius:0.375rem;width:32px;height:32px;display:flex;align-items:center;justify-content:center}
+  .moveBtn:hover{background:#666}
+</style>
+</head>
+<body class="bg-gray-100 p-6 flex flex-col items-center gap-4">
+  <h1 class="text-2xl font-bold">Graficador de Desigualdades Lineales</h1>
+
+  <div class="grid grid-cols-2 gap-4 w-full max-w-xl">
+    <template id="ineqTemplate">
+      <div class="flex flex-col gap-1">
+        <label class="text-sm font-semibold">Desigualdad</label>
+        <input class="ineqInput px-2 py-1 border rounded" placeholder="4*x+2*y<=100"/>
+      </div>
+    </template>
+  </div>
+  <div id="inputs" class="grid grid-cols-2 gap-4 w-full max-w-xl"></div>
+  <button id="addIneq" class="self-start bg-green-600 text-white px-3 py-1 rounded">+ añadir desigualdad</button>
+
+  <div class="flex gap-3 items-center">
+    <button id="btnDraw" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow">Graficar región</button>
+    <button id="zoomIn" class="bg-gray-700 text-white w-9 h-9 rounded">+</button>
+    <button id="zoomOut" class="bg-gray-700 text-white w-9 h-9 rounded">−</button>
+    <div class="grid grid-cols-3 gap-0 select-none">
+      <div></div><button class="moveBtn" data-dir="up">▲</button><div></div>
+      <button class="moveBtn" data-dir="left">◀</button><button class="moveBtn" data-dir="reset">⌖</button><button class="moveBtn" data-dir="right">▶</button>
+      <div></div><button class="moveBtn" data-dir="down">▼</button><div></div>
+    </div>
+  </div>
+
+  <canvas id="canvas" width="700" height="500"></canvas>
+  <p class="text-sm text-gray-600">Arrastra con el ratón o usa los botones de flechas para mover la vista. Usa + / − o la rueda para zoom.</p>
+
+<script>
+const tpl = document.getElementById('ineqTemplate');
+const container = document.getElementById('inputs');
+for(let i=0;i<4;i++){container.append(tpl.content.cloneNode(true));}
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W=canvas.width, H=canvas.height;
+let scale=40;
+let offset={x:W/2,y:H/2};
+const palette=['#008000','#800080','#d00000','#0044aa','#ff8c00','#8b4513'];
+const toPix = (x,y)=>({x:offset.x + x*scale, y:offset.y - y*scale});
+const toCoord=(px,py)=>({x:(px-offset.x)/scale, y:(offset.y-py)/scale});
+
+function parseIneq(str){
+  const ops=["<=","<",">=",">","="]; const op=ops.find(o=>str.includes(o)); if(!op) throw `Falta operador en ${str}`;
+  const [lhs,rhs]=str.split(op); const ex=`(${math.parse(lhs).toString()})-(${math.parse(rhs).toString()})`;
+  const testFunc=(x,y)=>{const val=Function('x','y',`return ${ex}`)(x,y); switch(op){case '<=':return val<=1e-9;case '<':return val<0;case '>=':return val>=-1e-9;case '>':return val>0;default:return Math.abs(val)<1e-9;}};
+  return {raw:str.trim(),op,test:testFunc,lhs,rhs,expr:ex};
+}
+
+function drawGrid(){
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='#eee'; ctx.lineWidth=1;
+  for(let x=offset.x%scale; x<W; x+=scale){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
+  for(let y=offset.y%scale; y<H; y+=scale){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
+  ctx.strokeStyle='#000'; ctx.lineWidth=1.5;
+  ctx.beginPath();ctx.moveTo(0,offset.y);ctx.lineTo(W,offset.y);ctx.moveTo(offset.x,0);ctx.lineTo(offset.x,H);ctx.stroke();
+  ctx.fillStyle='#000'; ctx.font='10px Arial';
+  for(let i=-W/scale;i<W/scale;i++){
+    const {x,y}=toPix(i,0); if(x>0&&x<W)ctx.fillText(i.toFixed(0),x+2,offset.y+12);
+  }
+  for(let j=-H/scale;j<H/scale;j++){
+    const {x,y}=toPix(0,j); if(y>0&&y<H)ctx.fillText(j.toFixed(0),offset.x+4,y-4);
+  }
+}
+
+function shade(ineqs){
+  const img=ctx.getImageData(0,0,W,H); const d=img.data;
+  for(let px=0;px<W;px++) for(let py=0;py<H;py++){
+    const {x,y}=toCoord(px,py);
+    if(ineqs.every(iq=>iq.test(x,y))){const idx=(py*W+px)*4; d[idx]=255;d[idx+1]=255;d[idx+2]=180;d[idx+3]=150;}
+  }
+  ctx.putImageData(img,0,0);
+}
+
+function drawBorders(ineqs){
+  ineqs.forEach((iq,i)=>{
+    ctx.strokeStyle=palette[i%palette.length]; ctx.lineWidth=2; ctx.beginPath(); let started=false; let labelPos=null;
+    for(let px=0;px<W;px+=1){
+      for(let py=0;py<H;py+=1){
+        const {x,y}=toCoord(px,py);
+        if(Math.abs(Function('x','y',`return ${iq.expr}`)(x,y))<1e-2){ if(!started){ctx.moveTo(px,py);started=true; labelPos={x:px,y:py};} else ctx.lineTo(px,py); break; }
+      }
+    }
+    ctx.stroke();
+    if(labelPos){ ctx.fillStyle=palette[i%palette.length]; ctx.font='12px Arial'; ctx.fillText(iq.raw,labelPos.x+4,labelPos.y-4); }
+  });
+}
+
+function findVertices(ineqs){
+  const verts=[];
+  for(let i=0;i<ineqs.length;i++){
+    for(let j=i+1;j<ineqs.length;j++){
+      const a=ineqs[i], b=ineqs[j];
+      try{
+        const expr1=a.raw.replace(/<=|>=|<|>/,'='), expr2=b.raw.replace(/<=|>=|<|>/,'=');
+        const sol = math.lusolve(math.matrix([
+          [math.derivative(expr1,'x').evaluate({x:1,y:1}), math.derivative(expr1,'y').evaluate({x:1,y:1})],
+          [math.derivative(expr2,'x').evaluate({x:1,y:1}), math.derivative(expr2,'y').evaluate({x:1,y:1})]
+        ]), math.matrix([
+          math.parse(expr1).evaluate({x:0,y:0}),
+          math.parse(expr2).evaluate({x:0,y:0})
+        ]));
+        const [x,y]=sol.toArray().map(v=>Number(v.toFixed(2)));
+        if(ineqs.every(f=>f.test(x,y))) verts.push({x,y});
+      }catch(e){}
+    }
+  }
+  verts.forEach((v,i)=>{
+    const {x,y}=toPix(v.x,v.y);
+    ctx.beginPath();ctx.fillStyle='black';ctx.arc(x,y,3,0,2*Math.PI);ctx.fill();
+    ctx.fillText(`(${v.x}, ${v.y})`,x+5,y-5);
+  });
+}
+
+function plot(){
+  const raws=[...document.querySelectorAll('.ineqInput')].map(el=>el.value.trim()).filter(Boolean);
+  let ineqs=[]; try{ineqs=raws.map(parseIneq);}catch(e){alert(e);return;}
+  drawGrid(); shade(ineqs); drawBorders(ineqs); findVertices(ineqs);
+}
+
+// UI
+ document.getElementById('addIneq').onclick=()=>container.append(tpl.content.cloneNode(true));
+ document.getElementById('btnDraw').onclick=plot;
+ document.getElementById('zoomIn').onclick=()=>{scale=Math.min(scale+10,150);plot();};
+ document.getElementById('zoomOut').onclick=()=>{scale=Math.max(scale-10,10);plot();};
+ document.querySelectorAll('.moveBtn').forEach(btn=>btn.onclick=()=>{
+   const step=20;
+   switch(btn.dataset.dir){case 'up':offset.y+=step;break;case 'down':offset.y-=step;break;case 'left':offset.x+=step;break;case 'right':offset.x-=step;break;case 'reset':offset={x:W/2,y:H/2};break;} plot();
+ });
+ let dragging=false,start={x:0,y:0},startOff={x:0,y:0};
+ canvas.addEventListener('pointerdown',e=>{dragging=true;start={x:e.clientX,y:e.clientY};startOff={...offset};canvas.setPointerCapture(e.pointerId);});
+ canvas.addEventListener('pointermove',e=>{if(!dragging)return;offset.x=startOff.x+(e.clientX-start.x);offset.y=startOff.y+(e.clientY-start.y);plot();});
+ canvas.addEventListener('pointerup',()=>dragging=false);
+ canvas.addEventListener('wheel',e=>{e.preventDefault();const delta=e.deltaY>0?-10:10;scale=Math.max(10,Math.min(150,scale+delta));plot();});
+
+// init
+drawGrid();
+</script>
+</body>
+</html>
