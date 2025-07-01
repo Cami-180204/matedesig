@@ -94,10 +94,12 @@ function grid() {
   ctx.font = '10px Arial';
   ctx.fillStyle = '#000';
   for (let i = -cv.width / scale; i < cv.width / scale; i++) {
+    if (Math.abs(i % Math.ceil(50 / scale)) > 1e-9) continue;
     const p = tp(i, 0);
     if (p.x > 0 && p.x < cv.width) ctx.fillText(i, p.x + 2, off.y + 12);
   }
   for (let j = -cv.height / scale; j < cv.height / scale; j++) {
+    if (Math.abs(j % Math.ceil(50 / scale)) > 1e-9) continue;
     const p = tp(0, j);
     if (p.y > 0 && p.y < cv.height) ctx.fillText(j, p.x + 4, p.y - 2);
   }
@@ -150,21 +152,26 @@ function verts(ins) {
       try {
         const eq1 = ins[i].raw.replace(/<=|>=|<|>/, '='),
               eq2 = ins[j].raw.replace(/<=|>=|<|>/, '=');
-        const sys = math.parse(`[${eq1}, ${eq2}]`).compile();
-        const sol = math.lusolve([
+        const res = math.lusolve([
           [math.derivative(eq1, 'x').evaluate({x:1,y:1}), math.derivative(eq1, 'y').evaluate({x:1,y:1})],
           [math.derivative(eq2, 'x').evaluate({x:1,y:1}), math.derivative(eq2, 'y').evaluate({x:1,y:1})]
         ], [math.parse(eq1).evaluate({x:0,y:0}), math.parse(eq2).evaluate({x:0,y:0})]).toArray();
-        const [x, y] = sol.map(v => Number(v.toFixed(2)));
+        const [x, y] = res.map(v => Number(v.toFixed(2)));
         if (ins.every(f => f.test(x, y))) vs.push({x, y});
       } catch (e) {}
     }
   }
   vs.forEach(v => {
     const p = tp(v.x, v.y);
-    ctx.beginPath(); ctx.fillStyle = '#000';
-    ctx.arc(p.x, p.y, 3, 0, 2 * Math.PI); ctx.fill();
-    ctx.fillText(`(${v.x},${v.y})`, p.x + 4, p.y - 4);
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 4, 0, 2 * Math.PI);
+    ctx.fillStyle = 'orange';
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+    ctx.font = '12px Arial';
+    ctx.fillStyle = '#000';
+    ctx.fillText(`(${v.x},${v.y})`, p.x + 5, p.y - 5);
   });
 }
 
@@ -190,9 +197,7 @@ document.querySelectorAll('[data-d]').forEach(b => b.onclick = () => {
   plot();
 });
 
-// SIN mover con ratón
 plot();
 </script>
 </body>
 </html>
-
