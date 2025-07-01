@@ -1,153 +1,148 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8" />
-<title>Graficador Profesional de Desigualdades</title>
+<meta charset="UTF-8"/>
+<title>Graficador de desigualdades (offline ligero)</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.1/math.min.js"></script>
 <style>
-  canvas{background:#ffffff;border:1px solid #222;border-radius:0.75rem;touch-action:none;cursor:grab}
-  canvas:active{cursor:grabbing}
-  .moveBtn{background:#444;color:#fff;font-weight:bold;border-radius:0.375rem;width:32px;height:32px;display:flex;align-items:center;justify-content:center}
-  .moveBtn:hover{background:#666}
+  canvas {background: #fff; border: 1px solid #000; border-radius: 8px; cursor: grab; touch-action: none;}
+  canvas:active {cursor: grabbing;}
+  .btn {background: #4b5563; color: #fff; font-weight: 600; border-radius: 6px; padding: 6px 12px;}
+  .mv {width: 34px; height: 34px; display: flex; align-items: center; justify-content: center;}
 </style>
 </head>
 <body class="bg-gray-100 p-6 flex flex-col items-center gap-4">
-  <h1 class="text-2xl font-bold">Graficador de Desigualdades Lineales</h1>
-
-  <div class="grid grid-cols-2 gap-4 w-full max-w-xl">
-    <template id="ineqTemplate">
-      <div class="flex flex-col gap-1">
-        <label class="text-sm font-semibold">Desigualdad</label>
-        <input class="ineqInput px-2 py-1 border rounded" placeholder="4*x+2*y<=100"/>
-      </div>
-    </template>
-  </div>
-  <div id="inputs" class="grid grid-cols-2 gap-4 w-full max-w-xl"></div>
-  <button id="addIneq" class="self-start bg-green-600 text-white px-3 py-1 rounded">+ añadir desigualdad</button>
-
+  <h1 class="text-xl font-bold">Graficador de desigualdades (offline ligero)</h1>
+  <div id="inputWrap" class="grid grid-cols-2 gap-4 w-full max-w-4xl"></div>
+  <button id="add" class="btn bg-green-600">+ desigualdad</button>
   <div class="flex gap-3 items-center">
-    <button id="btnDraw" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded shadow">Graficar región</button>
-    <button id="zoomIn" class="bg-gray-700 text-white w-9 h-9 rounded">+</button>
-    <button id="zoomOut" class="bg-gray-700 text-white w-9 h-9 rounded">−</button>
+    <button id="draw" class="btn bg-blue-600">Graficar</button>
+    <button id="zin" class="btn">+</button>
+    <button id="zout" class="btn">−</button>
     <div class="grid grid-cols-3 gap-0 select-none">
-      <div></div><button class="moveBtn" data-dir="up">▲</button><div></div>
-      <button class="moveBtn" data-dir="left">◀</button><button class="moveBtn" data-dir="reset">⌖</button><button class="moveBtn" data-dir="right">▶</button>
-      <div></div><button class="moveBtn" data-dir="down">▼</button><div></div>
+      <div></div><button class="btn mv" data-d="up">▲</button><div></div>
+      <button class="btn mv" data-d="left">◀</button><button class="btn mv" data-d="re">⌖</button><button class="btn mv" data-d="right">▶</button>
+      <div></div><button class="btn mv" data-d="down">▼</button><div></div>
     </div>
   </div>
-
-  <canvas id="canvas" width="700" height="500"></canvas>
-  <p class="text-sm text-gray-600">Arrastra con el ratón o usa los botones de flechas para mover la vista. Usa + / − o la rueda para zoom.</p>
-
+  <canvas id="cv" width="1024" height="640"></canvas>
 <script>
-const tpl = document.getElementById('ineqTemplate');
-const container = document.getElementById('inputs');
-for(let i=0;i<4;i++){container.append(tpl.content.cloneNode(true));}
-const canvas = document.getElementById('canvas');
-const ctx = canvas.getContext('2d');
-const W=canvas.width, H=canvas.height;
-let scale=40;
-let offset={x:W/2,y:H/2};
-const palette=['#008000','#800080','#d00000','#0044aa','#ff8c00','#8b4513'];
-const toPix = (x,y)=>({x:offset.x + x*scale, y:offset.y - y*scale});
-const toCoord=(px,py)=>({x:(px-offset.x)/scale, y:(offset.y-py)/scale});
-
-function parseIneq(str){
-  const ops=["<=","<",">=",">","="]; const op=ops.find(o=>str.includes(o)); if(!op) throw `Falta operador en ${str}`;
-  const [lhs,rhs]=str.split(op); const ex=`(${math.parse(lhs).toString()})-(${math.parse(rhs).toString()})`;
-  const testFunc=(x,y)=>{const val=Function('x','y',`return ${ex}`)(x,y); switch(op){case '<=':return val<=1e-9;case '<':return val<0;case '>=':return val>=-1e-9;case '>':return val>0;default:return Math.abs(val)<1e-9;}};
-  return {raw:str.trim(),op,test:testFunc,lhs,rhs,expr:ex};
+const tpl = () => `<div class="flex flex-col gap-1"><input class="ineq px-2 py-1 border rounded" placeholder="4x+2y<=100"/></div>`;
+const wrap = document.getElementById('inputWrap');
+for (let i = 0; i < 3; i++) wrap.insertAdjacentHTML('beforeend', tpl());
+document.getElementById('add').onclick = () => wrap.insertAdjacentHTML('beforeend', tpl());
+const cv = document.getElementById('cv');
+const ctx = cv.getContext('2d');
+let scale = 40, off = {x: cv.width/2, y: cv.height/2};
+const pal = ['#ef4444','#3b82f6','#10b981','#f59e0b','#8b5cf6','#ec4899'];
+const tp = (x,y) => ({x:off.x+x*scale,y:off.y-y*scale});
+const tc = (px,py) => ({x:(px-off.x)/scale,y:(off.y-py)/scale});
+function parse(e) {
+  e = e.replaceAll('*','').replaceAll(' ','');
+  const ops = ['<=','>=','<','>','='];
+  const o = ops.find(op => e.includes(op));
+  if (!o) throw `Operador? -> ${e}`;
+  const [l,r] = e.split(o);
+  const ex = `(${math.parse(l)})-(${math.parse(r)})`;
+  const test = (x,y) => {
+    const v = Function('x','y',`return ${ex}`)(x,y);
+    switch(o){
+      case '<=': return v <= 1e-9;
+      case '<':  return v < 0;
+      case '>=': return v >= -1e-9;
+      case '>':  return v > 0;
+      default:   return Math.abs(v) < 1e-9;
+    }
+  };
+  return {raw:e,expr:ex,test,color:pal.pop()||'#000'};
 }
-
-function drawGrid(){
-  ctx.clearRect(0,0,W,H);
-  ctx.strokeStyle='#eee'; ctx.lineWidth=1;
-  for(let x=offset.x%scale; x<W; x+=scale){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,H);ctx.stroke();}
-  for(let y=offset.y%scale; y<H; y+=scale){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();}
-  ctx.strokeStyle='#000'; ctx.lineWidth=1.5;
-  ctx.beginPath();ctx.moveTo(0,offset.y);ctx.lineTo(W,offset.y);ctx.moveTo(offset.x,0);ctx.lineTo(offset.x,H);ctx.stroke();
-  ctx.fillStyle='#000'; ctx.font='10px Arial';
-  for(let i=-W/scale;i<W/scale;i++){
-    const {x,y}=toPix(i,0); if(x>0&&x<W)ctx.fillText(i.toFixed(0),x+2,offset.y+12);
-  }
-  for(let j=-H/scale;j<H/scale;j++){
-    const {x,y}=toPix(0,j); if(y>0&&y<H)ctx.fillText(j.toFixed(0),offset.x+4,y-4);
-  }
+function grid(){
+  ctx.clearRect(0,0,cv.width,cv.height);
+  ctx.lineWidth=1; ctx.strokeStyle='#e5e7eb';
+  for(let x=off.x%scale;x<cv.width;x+=scale){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,cv.height);ctx.stroke();}
+  for(let y=off.y%scale;y<cv.height;y+=scale){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(cv.width,y);ctx.stroke();}
+  ctx.strokeStyle='#000';ctx.beginPath();ctx.moveTo(0,off.y);ctx.lineTo(cv.width,off.y);ctx.moveTo(off.x,0);ctx.lineTo(off.x,cv.height);ctx.stroke();
+  ctx.font='10px Arial';ctx.fillStyle='#000';
+  for(let i=-cv.width/scale;i<cv.width/scale;i++){const p=tp(i,0);if(p.x>0&&p.x<cv.width)ctx.fillText(i,p.x+2,off.y+12);}
+  for(let j=-cv.height/scale;j<cv.height/scale;j++){const p=tp(0,j);if(p.y>0&&p.y<cv.height)ctx.fillText(j,p.x+4,p.y-2);}
 }
-
-function shade(ineqs){
-  const img=ctx.getImageData(0,0,W,H); const d=img.data;
-  for(let px=0;px<W;px++) for(let py=0;py<H;py++){
-    const {x,y}=toCoord(px,py);
-    if(ineqs.every(iq=>iq.test(x,y))){const idx=(py*W+px)*4; d[idx]=255;d[idx+1]=255;d[idx+2]=180;d[idx+3]=150;}
+function shade(ins){
+  const img=ctx.getImageData(0,0,cv.width,cv.height);
+  const d=img.data; const step=4;
+  for(let px=0;px<cv.width;px+=step) for(let py=0;py<cv.height;py+=step){
+    const {x,y}=tc(px,py);
+    if(ins.every(f=>f.test(x,y)))
+      for(let dx=0;dx<step;dx++) for(let dy=0;dy<step;dy++){
+        const id=((py+dy)*cv.width+px+dx)*4;
+        d[id]=255; d[id+1]=255; d[id+2]=150; d[id+3]=90;
+      }
   }
   ctx.putImageData(img,0,0);
 }
-
-function drawBorders(ineqs){
-  ineqs.forEach((iq,i)=>{
-    ctx.strokeStyle=palette[i%palette.length]; ctx.lineWidth=2; ctx.beginPath(); let started=false; let labelPos=null;
-    for(let px=0;px<W;px+=1){
-      for(let py=0;py<H;py+=1){
-        const {x,y}=toCoord(px,py);
-        if(Math.abs(Function('x','y',`return ${iq.expr}`)(x,y))<1e-2){ if(!started){ctx.moveTo(px,py);started=true; labelPos={x:px,y:py};} else ctx.lineTo(px,py); break; }
+function border(ins){
+  ins.forEach((f,i)=>{
+    ctx.strokeStyle=f.color; ctx.lineWidth=2; ctx.beginPath();
+    let started=false,lx=0,ly=0;
+    for(let px=0;px<cv.width;px++){
+      let found=false;
+      for(let py=0;py<cv.height;py++){
+        const {x,y}=tc(px,py);
+        if(Math.abs(Function('x','y',`return ${f.expr}`)(x,y))<1e-2){
+          if(!started){ctx.moveTo(px,py); started=true;}
+          else ctx.lineTo(px,py);
+          lx=px; ly=py; found=true; break;
+        }
       }
     }
-    ctx.stroke();
-    if(labelPos){ ctx.fillStyle=palette[i%palette.length]; ctx.font='12px Arial'; ctx.fillText(iq.raw,labelPos.x+4,labelPos.y-4); }
+    ctx.stroke(); ctx.fillStyle=f.color; ctx.font='12px Arial';
+    ctx.fillText(f.raw,lx+4,ly-4);
   });
 }
-
-function findVertices(ineqs){
-  const verts=[];
-  for(let i=0;i<ineqs.length;i++){
-    for(let j=i+1;j<ineqs.length;j++){
-      const a=ineqs[i], b=ineqs[j];
-      try{
-        const expr1=a.raw.replace(/<=|>=|<|>/,'='), expr2=b.raw.replace(/<=|>=|<|>/,'=');
-        const sol = math.lusolve(math.matrix([
-          [math.derivative(expr1,'x').evaluate({x:1,y:1}), math.derivative(expr1,'y').evaluate({x:1,y:1})],
-          [math.derivative(expr2,'x').evaluate({x:1,y:1}), math.derivative(expr2,'y').evaluate({x:1,y:1})]
-        ]), math.matrix([
-          math.parse(expr1).evaluate({x:0,y:0}),
-          math.parse(expr2).evaluate({x:0,y:0})
-        ]));
-        const [x,y]=sol.toArray().map(v=>Number(v.toFixed(2)));
-        if(ineqs.every(f=>f.test(x,y))) verts.push({x,y});
-      }catch(e){}
-    }
+function verts(ins){
+  const vs=[];
+  for(let i=0;i<ins.length;i++) for(let j=i+1;j<ins.length;j++){
+    try{
+      const eq1=ins[i].raw.replace(/<=|>=|<|>/,'='), eq2=ins[j].raw.replace(/<=|>=|<|>/,'=');
+      const sol=math.lusolve(
+        [[math.derivative(eq1,'x').evaluate({x:1,y:1}),math.derivative(eq1,'y').evaluate({x:1,y:1})],
+         [math.derivative(eq2,'x').evaluate({x:1,y:1}),math.derivative(eq2,'y').evaluate({x:1,y:1})]],
+        [math.parse(eq1).evaluate({x:0,y:0}),math.parse(eq2).evaluate({x:0,y:0})]).toArray();
+      const [x,y]=sol.map(v=>Number(v.toFixed(2)));
+      if(ins.every(f=>f.test(x,y))) vs.push({x,y});
+    }catch(e){}
   }
-  verts.forEach((v,i)=>{
-    const {x,y}=toPix(v.x,v.y);
-    ctx.beginPath();ctx.fillStyle='black';ctx.arc(x,y,3,0,2*Math.PI);ctx.fill();
-    ctx.fillText(`(${v.x}, ${v.y})`,x+5,y-5);
+  vs.forEach(v=>{
+    const p=tp(v.x,v.y); ctx.beginPath(); ctx.fillStyle='#000';
+    ctx.arc(p.x,p.y,3,0,2*Math.PI); ctx.fill(); ctx.fillText(`(${v.x},${v.y})`,p.x+4,p.y-4);
   });
 }
-
 function plot(){
-  const raws=[...document.querySelectorAll('.ineqInput')].map(el=>el.value.trim()).filter(Boolean);
-  let ineqs=[]; try{ineqs=raws.map(parseIneq);}catch(e){alert(e);return;}
-  drawGrid(); shade(ineqs); drawBorders(ineqs); findVertices(ineqs);
+  try{
+    const ins=[...document.querySelectorAll('.ineq')].map(e=>e.value.trim()).filter(Boolean).map(parse);
+    grid(); shade(ins); border(ins); verts(ins);
+  }catch(e){alert(e);}
 }
-
-// UI
- document.getElementById('addIneq').onclick=()=>container.append(tpl.content.cloneNode(true));
- document.getElementById('btnDraw').onclick=plot;
- document.getElementById('zoomIn').onclick=()=>{scale=Math.min(scale+10,150);plot();};
- document.getElementById('zoomOut').onclick=()=>{scale=Math.max(scale-10,10);plot();};
- document.querySelectorAll('.moveBtn').forEach(btn=>btn.onclick=()=>{
-   const step=20;
-   switch(btn.dataset.dir){case 'up':offset.y+=step;break;case 'down':offset.y-=step;break;case 'left':offset.x+=step;break;case 'right':offset.x-=step;break;case 'reset':offset={x:W/2,y:H/2};break;} plot();
- });
- let dragging=false,start={x:0,y:0},startOff={x:0,y:0};
- canvas.addEventListener('pointerdown',e=>{dragging=true;start={x:e.clientX,y:e.clientY};startOff={...offset};canvas.setPointerCapture(e.pointerId);});
- canvas.addEventListener('pointermove',e=>{if(!dragging)return;offset.x=startOff.x+(e.clientX-start.x);offset.y=startOff.y+(e.clientY-start.y);plot();});
- canvas.addEventListener('pointerup',()=>dragging=false);
- canvas.addEventListener('wheel',e=>{e.preventDefault();const delta=e.deltaY>0?-10:10;scale=Math.max(10,Math.min(150,scale+delta));plot();});
-
-// init
-drawGrid();
+document.getElementById('draw').onclick=plot;
+document.getElementById('zin').onclick=()=>{scale=Math.min(scale+10,120);plot();};
+document.getElementById('zout').onclick=()=>{scale=Math.max(scale-10,10);plot();};
+document.querySelectorAll('[data-d]').forEach(b=>b.onclick=()=>{
+  const s=20;
+  switch(b.dataset.d){
+    case 'up': off.y += s; break;
+    case 'down': off.y -= s; break;
+    case 'left': off.x += s; break;
+    case 'right': off.x -= s; break;
+    default: off = {x:cv.width/2, y:cv.height/2};
+  }
+  plot();
+});
+let drag=false, start={x:0,y:0}, o0={x:0,y:0};
+cv.onpointerdown=e=>{drag=true;start={x:e.clientX,y:e.clientY};o0={...off};cv.setPointerCapture(e.pointerId);};
+cv.onpointermove=e=>{if(!drag)return;off.x=o0.x+(e.clientX-start.x);off.y=o0.y+(e.clientY-start.y);plot();};
+cv.onpointerup=()=>drag=false;
+cv.onwheel=e=>{e.preventDefault();scale=Math.max(10,Math.min(120,scale+(e.deltaY>0?-10:10)));plot();};
+grid();
 </script>
 </body>
 </html>
+
